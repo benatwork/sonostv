@@ -20,6 +20,7 @@ The screen shows only the artwork, title, artist and album. Everything else stay
 | Swipe down | A panel slides down from the top with the speakers playing and the source, e.g. "Sonos Move & Stereo" and "Berliner Rundfunk 91.4 · TuneIn" |
 | Swipe the other way, Back, or 8 seconds idle | The bar or panel slides away |
 | Swipe left or right | Pages through photos of the artist (from TheAudioDB and Deezer), then back to the artwork |
+| Slideshow button (right of ⏮ ⏯ ⏭ in the bar) | Turns the slideshow on or off: the photos and artwork advance every 8 seconds. Swiping still works and restarts the 8 seconds. The setting is remembered |
 | Play/Pause button | Plays or pauses straight away; a symbol flashes briefly |
 
 Buttons the current source doesn't support, such as skipping on TV audio, are disabled. A room you pause stays on screen for 15 minutes so you can resume it, but the screensaver is allowed to start.

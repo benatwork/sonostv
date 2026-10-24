@@ -7,13 +7,18 @@ enum ControlFocus: Hashable {
     case previous
     case playPause
     case next
+    case slideshow
 }
 
-/// The hidden control bar along the bottom of the screen.
+/// The hidden control bar along the bottom of the screen: playback, plus a button that
+/// starts or stops the artist photo slideshow.
 struct ControlBar: View {
     let nowPlaying: NowPlaying
     let focus: FocusState<ControlFocus?>.Binding
+    let hasPhotos: Bool
+    let isSlideshowOn: Bool
     let perform: (SonosHousehold.PlaybackCommand) -> Void
+    let toggleSlideshow: () -> Void
 
     var body: some View {
         VStack {
@@ -25,13 +30,21 @@ struct ControlBar: View {
                 control(
                     nowPlaying.isPlaying ? "pause.fill" : "play.fill",
                     focus: .playPause,
-                    enabled: !nowPlaying.isPlaying || nowPlaying.canPause
+                    enabled: canPlayPause
                 ) {
                     perform(nowPlaying.isPlaying ? .pause : .play)
                 }
                 control("forward.fill", focus: .next, enabled: nowPlaying.canSkip) {
                     perform(.skipToNextTrack)
                 }
+                control(
+                    isSlideshowOn ? "pause.rectangle" : "play.rectangle.on.rectangle",
+                    focus: .slideshow,
+                    enabled: canSlideshow,
+                    action: toggleSlideshow
+                )
+                // Set apart from playback: it controls the screen, not the music.
+                .padding(.leading, 48)
             }
             .padding(.vertical, 36)
             .frame(maxWidth: .infinity)
@@ -39,7 +52,17 @@ struct ControlBar: View {
                 LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
             }
         }
-        .onAppear { focus.wrappedValue = .playPause }
+        // Focus can't land on a disabled button. Radio, for example, can't pause or skip,
+        // so the slideshow button may be the only one that works.
+        .onAppear { focus.wrappedValue = canPlayPause ? .playPause : canSlideshow ? .slideshow : nil }
+    }
+
+    private var canPlayPause: Bool {
+        !nowPlaying.isPlaying || nowPlaying.canPause
+    }
+
+    private var canSlideshow: Bool {
+        hasPhotos || isSlideshowOn
     }
 
     private func control(

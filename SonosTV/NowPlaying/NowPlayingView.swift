@@ -16,6 +16,9 @@ struct NowPlayingView: View {
     @State private var artistPhotos: [UIImage] = []
     /// 0 is the artwork screen; 1 and up are artist photos.
     @State private var page = 0
+    /// Steps through the pages on its own, including the artwork, until turned off.
+    /// Remembered between launches.
+    @AppStorage("SlideshowOn") private var isSlideshowOn = false
     @State private var showsControls = false
     @State private var showsInfo = false
     @State private var lastInteraction = Date.now
@@ -53,10 +56,17 @@ struct NowPlayingView: View {
                 .transition(.opacity)
 
                 if showsControls {
-                    ControlBar(nowPlaying: nowPlaying, focus: $focus) { command in
-                        lastInteraction = .now
-                        household.send(command, to: nowPlaying.groupId)
-                    }
+                    ControlBar(
+                        nowPlaying: nowPlaying,
+                        focus: $focus,
+                        hasPhotos: !artistPhotos.isEmpty,
+                        isSlideshowOn: isSlideshowOn,
+                        perform: { command in
+                            lastInteraction = .now
+                            household.send(command, to: nowPlaying.groupId)
+                        },
+                        toggleSlideshow: toggleSlideshow
+                    )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
@@ -117,6 +127,12 @@ struct NowPlayingView: View {
         .task(id: nowPlaying?.artworkURL) {
             artwork = await Self.loadImage(nowPlaying?.artworkURL)
         }
+        .task(id: [isSlideshowOn ? 1 : 0, page, artistPhotos.count]) {
+            // Restarts whenever the page changes, so a manual swipe gets the full interval too.
+            guard isSlideshowOn, !artistPhotos.isEmpty else { return }
+            try? await Task.sleep(for: Self.slideshowInterval)
+            if !Task.isCancelled { turnPage(by: 1) }
+        }
         .task(id: nowPlaying?.artist) {
             // A new artist: back to the artwork, and fetch their photos one by one.
             page = 0
@@ -144,6 +160,17 @@ struct NowPlayingView: View {
     private func hidePanels() {
         showsControls = false
         showsInfo = false
+    }
+
+    private static let slideshowInterval = Duration.seconds(8)
+
+    /// Starting the slideshow closes the control bar and goes straight to a photo.
+    private func toggleSlideshow() {
+        isSlideshowOn.toggle()
+        if isSlideshowOn {
+            hidePanels()
+            if page == 0 { turnPage(by: 1) }
+        }
     }
 
     /// Steps through the artwork and the artist photos, wrapping around at either end.
