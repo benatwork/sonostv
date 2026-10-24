@@ -16,6 +16,9 @@ nonisolated struct RadioSong: Equatable, Sendable {
     /// (empty, or the station's own name or slogan).
     static func resolve(_ text: String?, station: String?, session: URLSession) async -> RadioSong? {
         guard let text = text?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
+        if let fields = labeledFields(text) {
+            return await resolve(fields, session: session)
+        }
         let parts = text.components(separatedBy: " - ")
         guard parts.count >= 2 else {
             return isStation(text, station) ? nil : RadioSong(artist: nil, title: tidy(text), album: nil, artworkURL: nil)
@@ -32,6 +35,101 @@ nonisolated struct RadioSong: Equatable, Sendable {
             return match
         }
         return RadioSong(artist: tidy(first), title: tidy(rest), album: nil, artworkURL: nil)
+    }
+
+    /// BBC Sounds labels its fields: "BR P|TYPE=SNG|TITLE Nao in conversation|ARTIST Gilles Peterson 15:00 – 18:00|ALBUM ".
+    private static func resolve(_ fields: [String: String], session: URLSession) async -> RadioSong? {
+        guard let title = fields["TITLE"] else { return nil }
+        guard let artist = fields["ARTIST"] else {
+            return RadioSong(artist: nil, title: tidy(title), album: nil, artworkURL: nil)
+        }
+        if hasTimeSlot(artist) {
+            // A show segment, not a song: the "artist" is the show and its time slot. Keep the
+            // station's own image, since there's no record to look up.
+            return RadioSong(artist: withoutTimeSlot(artist), title: title, album: nil, artworkURL: nil)
+        }
+        if let match = await lookUp(artist: artist, title: title, session: session) {
+            return match
+        }
+        return RadioSong(artist: tidy(artist), title: tidy(title), album: fields["ALBUM"], artworkURL: nil)
+    }
+
+    /// TITLE, ARTIST and ALBUM from text in the labeled format, or nil for other text.
+    private static func labeledFields(_ text: String) -> [String: String]? {
+        var fields: [String: String] = [:]
+        for part in text.components(separatedBy: "|") {
+            for label in ["TITLE", "ARTIST", "ALBUM"] where part.hasPrefix(label + " ") {
+                let value = part.dropFirst(label.count).trimmingCharacters(in: .whitespaces)
+                if !value.isEmpty { fields[label] = value }
+            }
+        }
+        return fields["TITLE"] == nil ? nil : fields
+    }
+
+    // MARK: - Show slots
+
+    /// BBC Sounds puts the show's name and time slot where the artist goes during talk:
+    /// "Gilles Peterson 15:00 – 18:00".
+    static func hasTimeSlot(_ text: String) -> Bool {
+        text.contains(timeSlot)
+    }
+
+    /// "Gilles Peterson 15:00 – 18:00" → "Gilles Peterson".
+    static func withoutTimeSlot(_ text: String) -> String {
+        text.replacing(timeSlot, with: "")
+    }
+
+    nonisolated(unsafe) private static let timeSlot = /\s+\d{1,2}[:.]\d{2}\s*[–—-]\s*\d{1,2}[:.]\d{2}\s*$/
+
+    // MARK: - BBC Sounds
+
+    /// The text to work out the song from: what the stream sent, unless this is a BBC
+    /// Sounds station whose own feed says a song is playing. BBC often reports only the
+    /// show to Sonos, but its feed knows each song.
+    static func currentText(streamText: String?, stationId: String?, session: URLSession) async -> String? {
+        guard let stationId, let service = bbcService(in: stationId),
+              let song = await bbcNowPlaying(service: service, session: session)
+        else { return streamText }
+        return "\(song.artist) - \(song.title)"
+    }
+
+    /// "stations~playable~~bbc_6music~~urn:bbc:radio:network:bbc_6music" → "bbc_6music".
+    private static func bbcService(in stationId: String) -> String? {
+        stationId.firstMatch(of: /~~(bbc_[a-z0-9_]+)~~/).map { String($0.1) }
+    }
+
+    private struct BBCSegments: Decodable {
+        let data: [Segment]
+
+        struct Segment: Decodable {
+            let titles: Titles
+            let offset: Offset?
+
+            struct Titles: Decodable {
+                let primary: String?
+                let secondary: String?
+            }
+
+            struct Offset: Decodable {
+                let nowPlaying: Bool?
+
+                enum CodingKeys: String, CodingKey {
+                    case nowPlaying = "now_playing"
+                }
+            }
+        }
+    }
+
+    /// The song BBC's feed says is playing right now, if any. Between songs it lists the
+    /// recent ones without marking any as playing.
+    private static func bbcNowPlaying(service: String, session: URLSession) async -> (artist: String, title: String)? {
+        guard let url = URL(string: "https://rms.api.bbc.co.uk/v2/services/\(service)/segments/latest?experience=domestic&offset=0&limit=1"),
+              let (data, _) = try? await session.data(for: URLRequest(url: url, timeoutInterval: 5)),
+              let segments = try? JSONDecoder().decode(BBCSegments.self, from: data),
+              let segment = segments.data.first, segment.offset?.nowPlaying == true,
+              let artist = segment.titles.primary, let title = segment.titles.secondary
+        else { return nil }
+        return (artist, title)
     }
 
     // MARK: - Reading the station text

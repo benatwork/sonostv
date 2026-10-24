@@ -97,6 +97,13 @@ nonisolated struct SonosMetadataStatus: Decodable, Sendable, Equatable {
         let imageUrl: String?
         /// The music service, e.g. "Apple Music" or "TuneIn (New)".
         let service: Service?
+        /// The service's own id for it, e.g. "s24950" on TuneIn or
+        /// "stations~playable~~bbc_6music~~urn:bbc:radio:network:bbc_6music" on BBC Sounds.
+        let id: ObjectId?
+    }
+
+    nonisolated struct ObjectId: Decodable, Sendable, Equatable {
+        let objectId: String?
     }
 
     nonisolated struct Service: Decodable, Sendable, Equatable {

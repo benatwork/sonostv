@@ -58,7 +58,11 @@ struct SonosSnapshot {
                     else { return nil }
                     // For radio, the song comes from the coordinator's older UPnP interface.
                     guard let station = room.stationName, let host = websocketURL.host() else { return room }
-                    let text = await RadioSong.streamText(fromPlayer: host, session: session)
+                    let text = await RadioSong.currentText(
+                        streamText: await RadioSong.streamText(fromPlayer: host, session: session),
+                        stationId: room.stationId,
+                        session: session
+                    )
                     let song = await RadioSong.resolve(text, station: station, session: session)
                     return song.map(room.withSong) ?? room
                 }

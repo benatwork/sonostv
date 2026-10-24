@@ -150,11 +150,17 @@ final class SonosHousehold {
             guard let host = group.coordinatorURL.host() else { continue }
             // Use the text Sonos pushed when it sent one; otherwise ask the older interface.
             let pushed = group.metadata?.streamInfo?.trimmingCharacters(in: .whitespaces)
-            let text = if let pushed, !pushed.isEmpty {
+            let streamText = if let pushed, !pushed.isEmpty {
                 pushed
             } else {
                 await RadioSong.streamText(fromPlayer: host, session: session)
             }
+            // BBC Sounds stations: their own feed knows the song even when Sonos only has the show.
+            let text = await RadioSong.currentText(
+                streamText: streamText,
+                stationId: group.metadata?.container?.id?.objectId,
+                session: session
+            )
             guard let current = groups[group.id], current.radioText != text else { continue }
             groups[group.id]?.radioText = text
 

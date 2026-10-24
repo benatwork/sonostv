@@ -13,6 +13,9 @@ nonisolated struct NowPlaying: Equatable, Sendable {
     private(set) var source: String?
     /// The station's name when this is radio, so its song can be looked up and shown.
     let stationName: String?
+    /// The station's id on its service, e.g. "s24950" on TuneIn. BBC Sounds ids name the
+    /// station, which lets its own now-playing feed be asked for the current song.
+    let stationId: String?
     /// The music service, e.g. "Apple Music" or "TuneIn".
     let serviceName: String?
     /// The speakers playing, by name. Filled in by the app, which knows the group's members.
@@ -38,6 +41,7 @@ nonisolated struct NowPlaying: Equatable, Sendable {
         self.roomName = roomName
         self.isPlaying = isPlaying
         stationName = container?.type == "station" ? container?.name.nonEmpty : nil
+        stationId = container?.type == "station" ? container?.id?.objectId.nonEmpty : nil
         // Sonos labels its current TuneIn integration "TuneIn (New)".
         serviceName = container?.service?.name.nonEmpty?.replacing(/\s*\(New\)$/, with: "")
         // Until Sonos reports otherwise, assume the usual controls work.
@@ -47,7 +51,8 @@ nonisolated struct NowPlaying: Equatable, Sendable {
 
         if let name = track?.name.nonEmpty {
             title = name
-            artist = track?.artist?.name.nonEmpty
+            // During talk, BBC Sounds sends the show and its time slot as the artist.
+            artist = track?.artist?.name.nonEmpty.map(RadioSong.withoutTimeSlot)
             detail = track?.album?.name.nonEmpty ?? (container?.type == "station" ? container?.name.nonEmpty : nil)
         } else if let streamInfo = metadata.streamInfo.nonEmpty {
             let station = container?.name.nonEmpty
