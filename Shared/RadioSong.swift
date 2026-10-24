@@ -138,7 +138,7 @@ nonisolated struct RadioSong: Equatable, Sendable {
     }
 
     /// Lowercase letters and digits only, without accents, for comparing names.
-    private static func normalized(_ text: String) -> String {
+    static func normalized(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .filter { $0.isLetter || $0.isNumber }
     }

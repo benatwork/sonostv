@@ -6,11 +6,16 @@ import SwiftUI
 /// until asked for: clicking or swiping up reveals playback controls at the bottom, and
 /// swiping down reveals where the music is playing at the top. Swiping the other way,
 /// Back, or 8 seconds without input hides them. The remote's Play/Pause button works at
-/// any time without showing either.
+/// any time without showing either. Swiping left or right pages through photos of the
+/// artist, fetched in the background when the artist changes.
 struct NowPlayingView: View {
     let household: SonosHousehold
 
     @State private var artwork: UIImage?
+    /// Photos of the current artist, added as they download.
+    @State private var artistPhotos: [UIImage] = []
+    /// 0 is the artwork screen; 1 and up are artist photos.
+    @State private var page = 0
     @State private var showsControls = false
     @State private var showsInfo = false
     @State private var lastInteraction = Date.now
@@ -26,7 +31,19 @@ struct NowPlayingView: View {
             if let nowPlaying {
                 // One invisible, full-screen button: clicking the remote reveals the controls.
                 Button(action: revealControls) {
-                    PlayingView(nowPlaying: nowPlaying, artwork: artwork)
+                    if page > 0, artistPhotos.indices.contains(page - 1) {
+                        ArtistPhotoView(
+                            photo: artistPhotos[page - 1],
+                            nowPlaying: nowPlaying,
+                            page: page,
+                            pageCount: artistPhotos.count + 1
+                        )
+                        .id(page)
+                        .transition(.opacity)
+                    } else {
+                        PlayingView(nowPlaying: nowPlaying, artwork: artwork)
+                            .transition(.opacity)
+                    }
                 }
                 .buttonStyle(InvisibleButtonStyle())
                 .focused($focus, equals: .canvas)
@@ -63,6 +80,7 @@ struct NowPlayingView: View {
         .animation(.easeOut(duration: 0.3), value: showsControls)
         .animation(.easeOut(duration: 0.3), value: showsInfo)
         .animation(.easeOut(duration: 0.3), value: flashSymbol)
+        .animation(.easeInOut(duration: 0.5), value: page)
         .onMoveCommand { direction in
             lastInteraction = .now
             switch direction {
@@ -70,6 +88,9 @@ struct NowPlayingView: View {
             case .up where !showsControls: revealControls()
             case .down where showsControls: showsControls = false
             case .down where !showsInfo: showsInfo = true
+            // With the control bar up, left and right move between its buttons instead.
+            case .left where !showsControls: turnPage(by: -1)
+            case .right where !showsControls: turnPage(by: 1)
             default: break
             }
         }
@@ -96,6 +117,18 @@ struct NowPlayingView: View {
         .task(id: nowPlaying?.artworkURL) {
             artwork = await Self.loadImage(nowPlaying?.artworkURL)
         }
+        .task(id: nowPlaying?.artist) {
+            // A new artist: back to the artwork, and fetch their photos one by one.
+            page = 0
+            artistPhotos = []
+            guard let artist = nowPlaying?.artist else { return }
+            for url in await ArtistPhotos.urls(for: artist) {
+                guard !Task.isCancelled else { return }
+                if let photo = await Self.loadImage(url) {
+                    artistPhotos.append(photo)
+                }
+            }
+        }
         .onChange(of: nowPlaying?.isPlaying == true, initial: true) { _, isPlaying in
             // Keep the screen awake while music plays; let the screensaver run when paused or idle.
             UIApplication.shared.isIdleTimerDisabled = isPlaying
@@ -111,6 +144,13 @@ struct NowPlayingView: View {
     private func hidePanels() {
         showsControls = false
         showsInfo = false
+    }
+
+    /// Steps through the artwork and the artist photos, wrapping around at either end.
+    private func turnPage(by step: Int) {
+        let count = artistPhotos.count + 1
+        guard count > 1 else { return }
+        page = (page + step + count) % count
     }
 
     private func togglePlayPause() {
@@ -130,7 +170,92 @@ struct NowPlayingView: View {
 
     private static func loadImage(_ url: URL?) async -> UIImage? {
         guard let url, let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
-        return UIImage(data: data)
+        // Decode now rather than on first draw, so paging doesn't stutter.
+        return await UIImage(data: data)?.byPreparingForDisplay()
+    }
+}
+
+/// One artist photo filling the screen, with a small caption of what's playing and dots
+/// showing where it sits among the pages.
+private struct ArtistPhotoView: View {
+    let photo: UIImage
+    let nowPlaying: NowPlaying
+    let page: Int
+    let pageCount: Int
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Color.clear
+                .overlay {
+                    if isWidescreen {
+                        Image(uiImage: photo)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        // Square or portrait photos would lose faces if cropped to fill;
+                        // show them whole over a blurred copy instead.
+                        ZStack {
+                            // Inside its own clipped layer, so the fill doesn't make the stack larger than the screen.
+                            Color.clear
+                                .overlay {
+                                    Image(uiImage: photo)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .blur(radius: 90)
+                                        .overlay(Color.black.opacity(0.5))
+                                }
+                                .clipped()
+                            Image(uiImage: photo)
+                                .resizable()
+                                .scaledToFit()
+                                .clipShape(.rect(cornerRadius: 28))
+                                .shadow(color: .black.opacity(0.5), radius: 40, y: 20)
+                                .padding(.vertical, 120)
+                        }
+                    }
+                }
+                .clipped()
+
+            LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(nowPlaying.title)
+                        .font(.system(size: 40, weight: .bold))
+                        .lineLimit(1)
+                    if let artist = nowPlaying.artist {
+                        Text(artist)
+                            .font(.system(size: 30))
+                            .lineLimit(1)
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                }
+                Spacer()
+                PageDots(page: page, count: pageCount)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 100)
+            .padding(.bottom, 70)
+        }
+    }
+
+    private var isWidescreen: Bool {
+        photo.size.width / max(photo.size.height, 1) > 1.4
+    }
+}
+
+private struct PageDots: View {
+    let page: Int
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(0..<count, id: \.self) { index in
+                Circle()
+                    .fill(.white.opacity(index == page ? 0.9 : 0.35))
+                    .frame(width: 12, height: 12)
+            }
+        }
     }
 }
 
