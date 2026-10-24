@@ -144,7 +144,7 @@ nonisolated struct RadioSong: Equatable, Sendable {
     }
 
     /// Stations often send ALL CAPS; show it in title case instead.
-    private static func tidy(_ text: String) -> String {
+    static func tidy(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard trimmed == trimmed.uppercased(), trimmed.contains(where: \.isLetter) else { return trimmed }
         return trimmed.capitalized(with: Locale.current)

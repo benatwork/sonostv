@@ -2,14 +2,17 @@ import SwiftUI
 
 /// The whole screen: the playing group's artwork and track, or an idle screen.
 ///
-/// Playback controls stay hidden. Clicking or swiping up on the remote reveals a control
-/// bar; Back, swiping down or 8 seconds without input hides it. The remote's Play/Pause
-/// button works at any time without showing the bar.
+/// The screen shows only the artwork, title, artist and album. Two panels stay hidden
+/// until asked for: clicking or swiping up reveals playback controls at the bottom, and
+/// swiping down reveals where the music is playing at the top. Swiping the other way,
+/// Back, or 8 seconds without input hides them. The remote's Play/Pause button works at
+/// any time without showing either.
 struct NowPlayingView: View {
     let household: SonosHousehold
 
     @State private var artwork: UIImage?
     @State private var showsControls = false
+    @State private var showsInfo = false
     @State private var lastInteraction = Date.now
     /// A play or pause symbol shown briefly after the Play/Pause button.
     @State private var flashSymbol: String?
@@ -40,6 +43,11 @@ struct NowPlayingView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
+                if showsInfo {
+                    InfoPanel(nowPlaying: nowPlaying)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 if let flashSymbol {
                     PlayPauseFlash(symbol: flashSymbol)
                         .transition(.opacity)
@@ -53,29 +61,32 @@ struct NowPlayingView: View {
         .animation(.easeInOut(duration: 0.6), value: nowPlaying)
         .animation(.easeInOut(duration: 0.6), value: artwork)
         .animation(.easeOut(duration: 0.3), value: showsControls)
+        .animation(.easeOut(duration: 0.3), value: showsInfo)
         .animation(.easeOut(duration: 0.3), value: flashSymbol)
         .onMoveCommand { direction in
             lastInteraction = .now
             switch direction {
+            case .up where showsInfo: showsInfo = false
             case .up where !showsControls: revealControls()
             case .down where showsControls: showsControls = false
+            case .down where !showsInfo: showsInfo = true
             default: break
             }
         }
         .onPlayPauseCommand(perform: togglePlayPause)
-        // While the bar is up, Back hides it; otherwise Back leaves the app as usual.
-        .onExitCommand(perform: showsControls ? { showsControls = false } : nil)
+        // While a panel is up, Back hides it; otherwise Back leaves the app as usual.
+        .onExitCommand(perform: showsControls || showsInfo ? { hidePanels() } : nil)
         .onChange(of: focus) { lastInteraction = .now }
         .onChange(of: showsControls) { _, shown in
             if !shown { focus = .canvas }
         }
         .onChange(of: nowPlaying == nil) { _, isIdle in
-            if isIdle { showsControls = false }
+            if isIdle { hidePanels() }
         }
         .task(id: lastInteraction) {
-            guard showsControls else { return }
+            guard showsControls || showsInfo else { return }
             try? await Task.sleep(for: .seconds(8))
-            if !Task.isCancelled { showsControls = false }
+            if !Task.isCancelled { hidePanels() }
         }
         .task(id: flashSymbol) {
             guard flashSymbol != nil else { return }
@@ -93,7 +104,13 @@ struct NowPlayingView: View {
 
     private func revealControls() {
         lastInteraction = .now
+        showsInfo = false
         showsControls = true
+    }
+
+    private func hidePanels() {
+        showsControls = false
+        showsInfo = false
     }
 
     private func togglePlayPause() {
@@ -141,12 +158,6 @@ private struct PlayingView: View {
                     .frame(width: 760, height: 760)
 
                 VStack(alignment: .leading, spacing: 18) {
-                    Label(roomLine, systemImage: "hifispeaker.fill")
-                        .font(.system(size: 30, weight: .semibold))
-                        .textCase(.uppercase)
-                        .foregroundStyle(.white.opacity(0.6))
-                        .padding(.bottom, 12)
-
                     Text(nowPlaying.title)
                         .font(.system(size: 76, weight: .bold))
                         .lineLimit(3)
@@ -172,10 +183,6 @@ private struct PlayingView: View {
             }
             .padding(.horizontal, 140)
         }
-    }
-
-    private var roomLine: String {
-        nowPlaying.isPlaying ? nowPlaying.sourceLine : "\(nowPlaying.sourceLine) · Paused"
     }
 }
 

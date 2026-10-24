@@ -20,6 +20,7 @@ final class SonosHousehold {
         let id: String
         var name: String
         var coordinatorURL: URL
+        var speakerNames: [String] = []
         var playbackState: String?
         var actions: SonosPlaybackStatus.Actions?
         var metadata: SonosMetadataStatus?
@@ -73,7 +74,9 @@ final class SonosHousehold {
                         actions: group.actions
                     )
                 }
-                return group.radioSong.flatMap { nowPlaying?.withSong($0) } ?? nowPlaying
+                var shown = group.radioSong.flatMap { nowPlaying?.withSong($0) } ?? nowPlaying
+                shown?.speakerNames = group.speakerNames
+                return shown
             }
             .first
     }
@@ -125,7 +128,13 @@ final class SonosHousehold {
         let stations = groups.values.filter { $0.isPlaying && $0.metadata?.container?.type == "station" }
         for group in stations {
             guard let host = group.coordinatorURL.host() else { continue }
-            let text = await RadioSong.streamText(fromPlayer: host, session: session)
+            // Use the text Sonos pushed when it sent one; otherwise ask the older interface.
+            let pushed = group.metadata?.streamInfo?.trimmingCharacters(in: .whitespaces)
+            let text = if let pushed, !pushed.isEmpty {
+                pushed
+            } else {
+                await RadioSong.streamText(fromPlayer: host, session: session)
+            }
             guard let current = groups[group.id], current.radioText != text else { continue }
             groups[group.id]?.radioText = text
 
@@ -231,16 +240,19 @@ final class SonosHousehold {
             }
         case "metadataStatus":
             if let groupId, let message = try? decoder.decode(SonosEnvelope<SonosMetadataStatus>.self, from: data) {
-                let previous = groups[groupId]?.metadata?.container
+                let previous = groups[groupId]?.metadata
                 groups[groupId]?.metadata = message.body
                 let container = message.body.container
-                if previous?.name != container?.name || previous?.type != container?.type {
-                    // A different source: forget the old station's song, and check the new one now.
+                let newSource = previous?.container?.name != container?.name || previous?.container?.type != container?.type
+                if newSource {
+                    // A different source: forget the old station's song.
                     groups[groupId]?.radioText = nil
                     groups[groupId]?.radioSong = nil
-                    if container?.type == "station" {
-                        Task { await refreshRadioSongs() }
-                    }
+                }
+                // Sonos pushes a station's new song text as it changes; look it up right away
+                // instead of waiting for the next poll.
+                if container?.type == "station" && (newSource || previous?.streamInfo != message.body.streamInfo) {
+                    Task { await refreshRadioSongs() }
                 }
             }
         case "globalError":
@@ -254,6 +266,7 @@ final class SonosHousehold {
 
     private func update(_ body: SonosGroups) {
         let playerURLs = Dictionary(body.players.map { ($0.id, $0.websocketUrl) }) { first, _ in first }
+        let playerNames = Dictionary(body.players.map { ($0.id, $0.name) }) { first, _ in first }
         var updated: [String: Group] = [:]
 
         for group in body.groups {
@@ -261,6 +274,7 @@ final class SonosHousehold {
             let existing = groups[group.id]
             var state = existing ?? Group(id: group.id, name: group.name, coordinatorURL: url)
             state.name = group.name
+            state.speakerNames = (group.playerIds ?? [group.coordinatorId]).compactMap { playerNames[$0] }.sorted()
             if let playbackState = group.playbackState {
                 state.playbackState = playbackState
             }
@@ -295,5 +309,9 @@ final class SonosHousehold {
             group.stoppedPlayingAt = .now
         }
         groups[groupId] = group
+        // At launch a station's metadata arrives before its playing state, so check its song now.
+        if group.isPlaying && !wasPlaying && group.metadata?.container?.type == "station" {
+            Task { await refreshRadioSongs() }
+        }
     }
 }

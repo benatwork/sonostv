@@ -13,6 +13,10 @@ nonisolated struct NowPlaying: Equatable, Sendable {
     private(set) var source: String?
     /// The station's name when this is radio, so its song can be looked up and shown.
     let stationName: String?
+    /// The music service, e.g. "Apple Music" or "TuneIn".
+    let serviceName: String?
+    /// The speakers playing, by name. Filled in by the app, which knows the group's members.
+    var speakerNames: [String] = []
     let isPlaying: Bool
     let canPause: Bool
     let canSkip: Bool
@@ -34,6 +38,8 @@ nonisolated struct NowPlaying: Equatable, Sendable {
         self.roomName = roomName
         self.isPlaying = isPlaying
         stationName = container?.type == "station" ? container?.name.nonEmpty : nil
+        // Sonos labels its current TuneIn integration "TuneIn (New)".
+        serviceName = container?.service?.name.nonEmpty?.replacing(/\s*\(New\)$/, with: "")
         // Until Sonos reports otherwise, assume the usual controls work.
         canPause = actions?.canPause ?? true
         canSkip = actions?.canSkip ?? true
@@ -52,10 +58,15 @@ nonisolated struct NowPlaying: Equatable, Sendable {
                 title = station
                 artist = nil
                 detail = parts.count > 1 ? parts.dropFirst().joined(separator: " - ") : nil
+            } else if parts.count > 1 {
+                // "ARTIST - TITLE", shown as title and artist until the song lookup fills in the rest.
+                title = RadioSong.tidy(parts.dropFirst().joined(separator: " - "))
+                artist = RadioSong.tidy(parts[0])
+                detail = nil
             } else {
-                title = streamInfo
+                title = RadioSong.tidy(streamInfo)
                 artist = nil
-                detail = station
+                detail = nil
             }
         } else if let name = container?.name.nonEmpty {
             title = name

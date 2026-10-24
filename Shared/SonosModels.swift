@@ -59,6 +59,8 @@ nonisolated struct SonosGroups: Decodable, Sendable {
         let coordinatorId: String
         /// Present in `getGroups` responses, missing from subscription events.
         let playbackState: String?
+        /// Every speaker in the group, coordinator included.
+        let playerIds: [String]?
     }
 
     nonisolated struct Player: Decodable, Sendable {
@@ -93,6 +95,12 @@ nonisolated struct SonosMetadataStatus: Decodable, Sendable, Equatable {
         /// For example `album`, `playlist`, `station` or `linein.homeTheater.hdmi`.
         let type: String?
         let imageUrl: String?
+        /// The music service, e.g. "Apple Music" or "TuneIn (New)".
+        let service: Service?
+    }
+
+    nonisolated struct Service: Decodable, Sendable, Equatable {
+        let name: String?
     }
 
     nonisolated struct Item: Decodable, Sendable, Equatable {

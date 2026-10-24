@@ -58,6 +58,57 @@ struct ControlBar: View {
     }
 }
 
+/// The hidden panel along the top of the screen: which speakers are playing, and from where.
+/// Nothing in it can be selected, so remote focus stays on the artwork.
+struct InfoPanel: View {
+    let nowPlaying: NowPlaying
+
+    var body: some View {
+        VStack {
+            HStack(alignment: .top, spacing: 28) {
+                Image(systemName: nowPlaying.speakerNames.count > 1 ? "hifispeaker.2.fill" : "hifispeaker.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(width: 80)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(speakers)
+                        .font(.system(size: 36, weight: .semibold))
+                        .foregroundStyle(.white)
+                    if let source {
+                        Text(source)
+                            .font(.system(size: 28))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 140)
+            // Clears the top of the 760-point artwork, which starts 160 points down.
+            .padding(.top, 44)
+            .padding(.bottom, 60)
+            .background {
+                LinearGradient(colors: [.black.opacity(0.75), .clear], startPoint: .top, endPoint: .bottom)
+            }
+            Spacer()
+        }
+    }
+
+    /// "Sonos Move & Kids Room" for a group, otherwise the room's name.
+    private var speakers: String {
+        let names = nowPlaying.speakerNames
+        guard names.count > 1 else { return names.first ?? nowPlaying.roomName }
+        return names.dropLast().joined(separator: ", ") + " & " + names.last!
+    }
+
+    /// For example "Berliner Rundfunk 91.4 · TuneIn" or "Apple Music · Paused".
+    private var source: String? {
+        let parts = [nowPlaying.stationName, nowPlaying.serviceName, nowPlaying.isPlaying ? nil : "Paused"]
+        let line = parts.compactMap { $0 }.joined(separator: " · ")
+        return line.isEmpty ? nil : line
+    }
+}
+
 /// Briefly confirms a Play/Pause press while the control bar is hidden.
 struct PlayPauseFlash: View {
     let symbol: String
