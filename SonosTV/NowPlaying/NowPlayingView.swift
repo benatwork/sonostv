@@ -1,10 +1,19 @@
 import SwiftUI
 
 /// The whole screen: the playing group's artwork and track, or an idle screen.
+///
+/// Playback controls stay hidden. Clicking or swiping up on the remote reveals a control
+/// bar; Back, swiping down or 8 seconds without input hides it. The remote's Play/Pause
+/// button works at any time without showing the bar.
 struct NowPlayingView: View {
     let household: SonosHousehold
 
     @State private var artwork: UIImage?
+    @State private var showsControls = false
+    @State private var lastInteraction = Date.now
+    /// A play or pause symbol shown briefly after the Play/Pause button.
+    @State private var flashSymbol: String?
+    @FocusState private var focus: ControlFocus?
 
     var body: some View {
         let nowPlaying = household.nowPlaying
@@ -12,8 +21,29 @@ struct NowPlayingView: View {
             Color.black
 
             if let nowPlaying {
-                PlayingView(nowPlaying: nowPlaying, artwork: artwork)
-                    .transition(.opacity)
+                // One invisible, full-screen button: clicking the remote reveals the controls.
+                Button(action: revealControls) {
+                    PlayingView(nowPlaying: nowPlaying, artwork: artwork)
+                }
+                .buttonStyle(InvisibleButtonStyle())
+                .focused($focus, equals: .canvas)
+                .disabled(showsControls)
+                // The view appears after launch, once speakers connect, so focus doesn't land here by itself.
+                .onAppear { focus = .canvas }
+                .transition(.opacity)
+
+                if showsControls {
+                    ControlBar(nowPlaying: nowPlaying, focus: $focus) { command in
+                        lastInteraction = .now
+                        household.send(command, to: nowPlaying.groupId)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                if let flashSymbol {
+                    PlayPauseFlash(symbol: flashSymbol)
+                        .transition(.opacity)
+                }
             } else {
                 IdleView(status: household.status, roomCount: household.groups.count)
                     .transition(.opacity)
@@ -22,12 +52,62 @@ struct NowPlayingView: View {
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.6), value: nowPlaying)
         .animation(.easeInOut(duration: 0.6), value: artwork)
+        .animation(.easeOut(duration: 0.3), value: showsControls)
+        .animation(.easeOut(duration: 0.3), value: flashSymbol)
+        .onMoveCommand { direction in
+            lastInteraction = .now
+            switch direction {
+            case .up where !showsControls: revealControls()
+            case .down where showsControls: showsControls = false
+            default: break
+            }
+        }
+        .onPlayPauseCommand(perform: togglePlayPause)
+        // While the bar is up, Back hides it; otherwise Back leaves the app as usual.
+        .onExitCommand(perform: showsControls ? { showsControls = false } : nil)
+        .onChange(of: focus) { lastInteraction = .now }
+        .onChange(of: showsControls) { _, shown in
+            if !shown { focus = .canvas }
+        }
+        .onChange(of: nowPlaying == nil) { _, isIdle in
+            if isIdle { showsControls = false }
+        }
+        .task(id: lastInteraction) {
+            guard showsControls else { return }
+            try? await Task.sleep(for: .seconds(8))
+            if !Task.isCancelled { showsControls = false }
+        }
+        .task(id: flashSymbol) {
+            guard flashSymbol != nil else { return }
+            try? await Task.sleep(for: .seconds(1.2))
+            if !Task.isCancelled { flashSymbol = nil }
+        }
         .task(id: nowPlaying?.artworkURL) {
             artwork = await Self.loadImage(nowPlaying?.artworkURL)
         }
-        .onChange(of: nowPlaying != nil, initial: true) { _, isShowingMusic in
-            // Keep the screen awake while music is showing; let the screensaver run otherwise.
-            UIApplication.shared.isIdleTimerDisabled = isShowingMusic
+        .onChange(of: nowPlaying?.isPlaying == true, initial: true) { _, isPlaying in
+            // Keep the screen awake while music plays; let the screensaver run when paused or idle.
+            UIApplication.shared.isIdleTimerDisabled = isPlaying
+        }
+    }
+
+    private func revealControls() {
+        lastInteraction = .now
+        showsControls = true
+    }
+
+    private func togglePlayPause() {
+        guard let nowPlaying = household.nowPlaying else { return }
+        lastInteraction = .now
+        if nowPlaying.isPlaying {
+            guard nowPlaying.canPause else { return }
+            household.send(.pause, to: nowPlaying.groupId)
+        } else {
+            household.send(.play, to: nowPlaying.groupId)
+        }
+        // The bar's button already shows the new state; flash only when the bar is hidden.
+        if !showsControls {
+            flashSymbol = nowPlaying.isPlaying ? "pause.fill" : "play.fill"
         }
     }
 

@@ -2,6 +2,7 @@ import Foundation
 
 /// What the screen shows for one group, flattened from Sonos metadata.
 struct NowPlaying: Equatable {
+    let groupId: String
     let roomName: String
     let title: String
     let artist: String?
@@ -9,15 +10,29 @@ struct NowPlaying: Equatable {
     let detail: String?
     let artworkURL: URL?
     let isPlaying: Bool
+    let canPause: Bool
+    let canSkip: Bool
+    let canSkipToPrevious: Bool
 
     /// Returns nil when there is nothing worth showing, such as TV audio or line-in.
-    init?(roomName: String, metadata: SonosMetadataStatus, isPlaying: Bool) {
+    init?(
+        groupId: String,
+        roomName: String,
+        metadata: SonosMetadataStatus,
+        isPlaying: Bool,
+        actions: SonosPlaybackStatus.Actions?
+    ) {
         let container = metadata.container
         let track = metadata.currentItem?.track
         if container?.type?.hasPrefix("linein") == true { return nil }
 
+        self.groupId = groupId
         self.roomName = roomName
         self.isPlaying = isPlaying
+        // Until Sonos reports otherwise, assume the usual controls work.
+        canPause = actions?.canPause ?? true
+        canSkip = actions?.canSkip ?? true
+        canSkipToPrevious = actions?.canSkipToPrevious ?? true
 
         if let name = track?.name.nonEmpty {
             title = name

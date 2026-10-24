@@ -21,27 +21,55 @@ final class SonosHousehold {
         var name: String
         var coordinatorURL: URL
         var playbackState: String?
+        var actions: SonosPlaybackStatus.Actions?
         var metadata: SonosMetadataStatus?
         /// When this group last went from not playing to playing. Picks which group to show.
         var startedPlayingAt = Date.distantPast
+        /// When this group last stopped playing. A recently paused group stays on screen.
+        var stoppedPlayingAt = Date.distantPast
 
         var isPlaying: Bool {
             playbackState == "PLAYBACK_STATE_PLAYING" || playbackState == "PLAYBACK_STATE_BUFFERING"
         }
     }
 
+    enum PlaybackCommand: String {
+        case play
+        case pause
+        case skipToNextTrack
+        case skipToPreviousTrack
+    }
+
+    /// How long a paused group stays on screen, so it can be resumed from the remote.
+    static let pausedGroupLingers: TimeInterval = 15 * 60
+
     private(set) var status = Status.searching
     private(set) var groups: [String: Group] = [:]
+    /// Ticks every 30 seconds so `nowPlaying` drops paused groups once they've lingered long enough.
+    private(set) var now = Date.now
 
-    /// What to show: the group that most recently started playing something with metadata.
+    /// What to show: the group that most recently started playing something with metadata,
+    /// or failing that, one that was paused in the last few minutes.
     var nowPlaying: NowPlaying? {
         let showIdle = UserDefaults.standard.bool(forKey: "ShowIdleGroups")
+        let pausedSince = now.addingTimeInterval(-Self.pausedGroupLingers)
         return groups.values
-            .filter { $0.isPlaying || showIdle }
-            .sorted { ($0.startedPlayingAt, $0.name) > ($1.startedPlayingAt, $1.name) }
+            .filter { $0.isPlaying || $0.stoppedPlayingAt > pausedSince || showIdle }
+            .sorted { lhs, rhs in
+                if lhs.isPlaying != rhs.isPlaying { return lhs.isPlaying }
+                return (lhs.startedPlayingAt, lhs.name) > (rhs.startedPlayingAt, rhs.name)
+            }
             .lazy
             .compactMap { group in
-                group.metadata.flatMap { NowPlaying(roomName: group.name, metadata: $0, isPlaying: group.isPlaying) }
+                group.metadata.flatMap {
+                    NowPlaying(
+                        groupId: group.id,
+                        roomName: group.name,
+                        metadata: $0,
+                        isPlaying: group.isPlaying,
+                        actions: group.actions
+                    )
+                }
             }
             .first
     }
@@ -70,6 +98,18 @@ final class SonosHousehold {
             status = blocked ? .localNetworkBlocked : .searching
         }
         discovery.start()
+        Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                now = .now
+            }
+        }
+    }
+
+    /// Sends a playback command to a group's coordinator.
+    func send(_ command: PlaybackCommand, to groupId: String) {
+        guard let group = groups[groupId], let socket = sockets[group.coordinatorURL] else { return }
+        socket.send(namespace: "playback:1", command: command.rawValue, groupId: groupId)
     }
 
     // MARK: - Connecting
@@ -150,7 +190,7 @@ final class SonosHousehold {
             }
         case "playbackStatus":
             if let groupId, let message = try? decoder.decode(SonosEnvelope<SonosPlaybackStatus>.self, from: data) {
-                updatePlaybackState(message.body.playbackState, groupId: groupId)
+                updatePlaybackStatus(message.body, groupId: groupId)
             }
         case "metadataStatus":
             if let groupId, let message = try? decoder.decode(SonosEnvelope<SonosMetadataStatus>.self, from: data) {
@@ -197,12 +237,15 @@ final class SonosHousehold {
         status = .connected
     }
 
-    private func updatePlaybackState(_ playbackState: String, groupId: String) {
+    private func updatePlaybackStatus(_ status: SonosPlaybackStatus, groupId: String) {
         guard var group = groups[groupId] else { return }
         let wasPlaying = group.isPlaying
-        group.playbackState = playbackState
+        group.playbackState = status.playbackState
+        group.actions = status.availablePlaybackActions
         if group.isPlaying && !wasPlaying {
             group.startedPlayingAt = .now
+        } else if wasPlaying && status.playbackState == "PLAYBACK_STATE_PAUSED" {
+            group.stoppedPlayingAt = .now
         }
         groups[groupId] = group
     }

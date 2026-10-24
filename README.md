@@ -10,6 +10,18 @@ To run on a real Apple TV, set your team under Signing & Capabilities and change
 
 **See the layout when nothing is playing:** add `-ShowIdleGroups YES` under Product › Scheme › Edit Scheme › Arguments. Paused and idle rooms then show their last track, marked "Paused".
 
+## Remote controls
+
+The screen shows only the artwork. Controls stay hidden until you ask for them:
+
+| Remote | What happens |
+|---|---|
+| Click, or swipe up | A ⏮ ⏯ ⏭ bar slides up from the bottom |
+| Swipe down, Back, or 8 seconds idle | The bar slides away |
+| Play/Pause button | Plays or pauses straight away; a symbol flashes briefly |
+
+Buttons the current source doesn't support, such as skipping on TV audio, are disabled. A room you pause stays on screen for 15 minutes so you can resume it, but the screensaver is allowed to start.
+
 ## How it works
 
 It uses the Sonos **local WebSocket API**, the same one the Sonos app uses. Nothing goes through the cloud.

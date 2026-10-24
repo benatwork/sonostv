@@ -64,6 +64,14 @@ nonisolated struct SonosGroups: Decodable, Sendable {
 /// Body of `playback:1` events.
 nonisolated struct SonosPlaybackStatus: Decodable, Sendable {
     let playbackState: String
+    let availablePlaybackActions: Actions?
+
+    /// What the current source allows; TV audio and radio, for example, can't skip.
+    nonisolated struct Actions: Decodable, Sendable, Equatable {
+        let canSkip: Bool?
+        let canSkipToPrevious: Bool?
+        let canPause: Bool?
+    }
 }
 
 /// Body of `playbackMetadata:1` events.
