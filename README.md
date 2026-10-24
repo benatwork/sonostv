@@ -17,7 +17,7 @@ The screen shows only the artwork, title, artist and album. Everything else stay
 | Remote | What happens |
 |---|---|
 | Click, or swipe up | A ⏮ ⏯ ⏭ bar slides up from the bottom |
-| Swipe down | A panel slides down from the top with the speakers playing and the source, e.g. "Sonos Move & Stereo" and "Berliner Rundfunk 91.4 · TuneIn" |
+| Swipe down | A panel slides down from the top with the speakers playing and the source, e.g. "Sonos Move & Stereo" and "Berliner Rundfunk 91.4 · TuneIn". When more than one room is playing, it also lists them; pick one to show it (the one on screen has a checkmark) |
 | Swipe the other way, Back, or 8 seconds idle | The bar or panel slides away |
 | Swipe left or right | Pages through photos of the artist (from TheAudioDB and Deezer), then back to the artwork |
 | Slideshow button (right of ⏮ ⏯ ⏭ in the bar) | Toggles slideshow mode; the symbol is filled while it's on. On: the photos and artwork advance every 8 seconds, and swiping still works and restarts the 8 seconds. Off: back to the album artwork. The setting is remembered |

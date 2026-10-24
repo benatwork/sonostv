@@ -28,6 +28,9 @@ struct NowPlayingView: View {
 
     var body: some View {
         let nowPlaying = household.nowPlaying
+        let playingRooms = household.playingRooms
+        // With more than one room playing, the top panel has a room picker that takes focus.
+        let showsPicker = showsInfo && playingRooms.count > 1
         ZStack {
             Color.black
 
@@ -50,7 +53,7 @@ struct NowPlayingView: View {
                 }
                 .buttonStyle(InvisibleButtonStyle())
                 .focused($focus, equals: .canvas)
-                .disabled(showsControls)
+                .disabled(showsControls || showsPicker)
                 // The view appears after launch, once speakers connect, so focus doesn't land here by itself.
                 .onAppear { focus = .canvas }
                 .transition(.opacity)
@@ -71,7 +74,10 @@ struct NowPlayingView: View {
                 }
 
                 if showsInfo {
-                    InfoPanel(nowPlaying: nowPlaying)
+                    InfoPanel(nowPlaying: nowPlaying, rooms: playingRooms, focus: $focus) { groupId in
+                        household.select(groupId)
+                        hidePanels()
+                    }
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
@@ -98,9 +104,9 @@ struct NowPlayingView: View {
             case .up where !showsControls: revealControls()
             case .down where showsControls: showsControls = false
             case .down where !showsInfo: showsInfo = true
-            // With the control bar up, left and right move between its buttons instead.
-            case .left where !showsControls: turnPage(by: -1)
-            case .right where !showsControls: turnPage(by: 1)
+            // With the control bar or room picker up, left and right move between their buttons instead.
+            case .left where !showsControls && !showsPicker: turnPage(by: -1)
+            case .right where !showsControls && !showsPicker: turnPage(by: 1)
             default: break
             }
         }
@@ -108,6 +114,9 @@ struct NowPlayingView: View {
         // While a panel is up, Back hides it; otherwise Back leaves the app as usual.
         .onExitCommand(perform: showsControls || showsInfo ? { hidePanels() } : nil)
         .onChange(of: focus) { lastInteraction = .now }
+        .onChange(of: showsInfo) { _, shown in
+            if !shown { focus = .canvas }
+        }
         .onChange(of: showsControls) { _, shown in
             if !shown { focus = .canvas }
         }

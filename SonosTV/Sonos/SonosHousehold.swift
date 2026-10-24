@@ -52,9 +52,31 @@ final class SonosHousehold {
     /// Ticks every 30 seconds so `nowPlaying` drops paused groups once they've lingered long enough.
     private(set) var now = Date.now
 
-    /// What to show: the group that most recently started playing something with metadata,
-    /// or failing that, one that was paused in the last few minutes.
+    /// The room picked in the room picker. When it has nothing to show any more, the
+    /// screen falls back to the usual choice.
+    private(set) var selectedGroupId: String?
+
+    /// What to show: the picked room if it still has something, otherwise the room that
+    /// most recently started playing something with metadata, or failing that, one that
+    /// was paused in the last few minutes.
     var nowPlaying: NowPlaying? {
+        let rooms = rooms
+        return rooms.first { $0.groupId == selectedGroupId } ?? rooms.first
+    }
+
+    /// The rooms to choose from in the room picker: those playing right now.
+    var playingRooms: [NowPlaying] {
+        let showIdle = UserDefaults.standard.bool(forKey: "ShowIdleGroups")
+        return rooms.filter { $0.isPlaying || showIdle }
+    }
+
+    func select(_ groupId: String) {
+        selectedGroupId = groupId
+    }
+
+    /// Every room with something worth showing, best first: playing before paused, then
+    /// the most recently started.
+    private var rooms: [NowPlaying] {
         let showIdle = UserDefaults.standard.bool(forKey: "ShowIdleGroups")
         let pausedSince = now.addingTimeInterval(-Self.pausedGroupLingers)
         return groups.values
@@ -63,7 +85,6 @@ final class SonosHousehold {
                 if lhs.isPlaying != rhs.isPlaying { return lhs.isPlaying }
                 return (lhs.startedPlayingAt, lhs.name) > (rhs.startedPlayingAt, rhs.name)
             }
-            .lazy
             .compactMap { group -> NowPlaying? in
                 let nowPlaying = group.metadata.flatMap {
                     NowPlaying(
@@ -78,7 +99,6 @@ final class SonosHousehold {
                 shown?.speakerNames = group.speakerNames
                 return shown
             }
-            .first
     }
 
     @ObservationIgnored private let session = URLSession(
