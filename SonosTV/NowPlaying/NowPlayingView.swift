@@ -164,12 +164,15 @@ struct NowPlayingView: View {
 
     private static let slideshowInterval = Duration.seconds(8)
 
-    /// Starting the slideshow closes the control bar and goes straight to a photo.
+    /// Slideshow mode is a toggle. Turning it on goes straight to a photo; turning it off
+    /// goes back to the album artwork. Either way the control bar closes.
     private func toggleSlideshow() {
         isSlideshowOn.toggle()
+        hidePanels()
         if isSlideshowOn {
-            hidePanels()
             if page == 0 { turnPage(by: 1) }
+        } else {
+            page = 0
         }
     }
 

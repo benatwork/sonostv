@@ -37,8 +37,9 @@ struct ControlBar: View {
                 control("forward.fill", focus: .next, enabled: nowPlaying.canSkip) {
                     perform(.skipToNextTrack)
                 }
+                // A toggle: the same symbol, filled while slideshow mode is on.
                 control(
-                    isSlideshowOn ? "pause.rectangle" : "play.rectangle.on.rectangle",
+                    isSlideshowOn ? "play.rectangle.on.rectangle.fill" : "play.rectangle.on.rectangle",
                     focus: .slideshow,
                     enabled: canSlideshow,
                     action: toggleSlideshow
