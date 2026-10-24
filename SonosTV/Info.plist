@@ -8,6 +8,17 @@
 	<array>
 		<string>_sonos._tcp</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.benroth.SonosTV</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>sonostv</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

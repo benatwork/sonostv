@@ -1,6 +1,13 @@
 import Foundation
 
-// Message shapes for the Sonos local WebSocket API (wss://<player>:1443/websocket/api).
+nonisolated enum SonosAPI {
+    /// The sample key from Sonos's developer docs. Players accept it for local connections.
+    static let key = "123e4567-e89b-12d3-a456-426655440000"
+    static let webSocketProtocol = "v1.api.smartspeaker.audio"
+}
+
+// Message shapes for the Sonos local API, over WebSocket (wss://<player>:1443/websocket/api)
+// or one-off HTTPS requests (https://<player>:1443/api/v1/...), which return the same bodies.
 // Only the fields this app reads are modeled; everything else is ignored.
 
 /// The first element of every message.

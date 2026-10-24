@@ -175,7 +175,7 @@ private struct PlayingView: View {
     }
 
     private var roomLine: String {
-        nowPlaying.isPlaying ? nowPlaying.roomName : "\(nowPlaying.roomName) · Paused"
+        nowPlaying.isPlaying ? nowPlaying.sourceLine : "\(nowPlaying.sourceLine) · Paused"
     }
 }
 

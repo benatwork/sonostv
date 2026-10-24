@@ -1,11 +1,5 @@
 import Foundation
 
-enum SonosAPI {
-    /// The sample key from Sonos's developer docs. Players accept it for local connections.
-    static let key = "123e4567-e89b-12d3-a456-426655440000"
-    static let webSocketProtocol = "v1.api.smartspeaker.audio"
-}
-
 /// One WebSocket connection to a Sonos player's local control API.
 final class SonosSocket {
     let url: URL

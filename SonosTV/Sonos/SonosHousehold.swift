@@ -23,6 +23,9 @@ final class SonosHousehold {
         var playbackState: String?
         var actions: SonosPlaybackStatus.Actions?
         var metadata: SonosMetadataStatus?
+        /// For radio: the station's latest "now playing" text, and the song worked out from it.
+        var radioText: String?
+        var radioSong: RadioSong?
         /// When this group last went from not playing to playing. Picks which group to show.
         var startedPlayingAt = Date.distantPast
         /// When this group last stopped playing. A recently paused group stays on screen.
@@ -60,8 +63,8 @@ final class SonosHousehold {
                 return (lhs.startedPlayingAt, lhs.name) > (rhs.startedPlayingAt, rhs.name)
             }
             .lazy
-            .compactMap { group in
-                group.metadata.flatMap {
+            .compactMap { group -> NowPlaying? in
+                let nowPlaying = group.metadata.flatMap {
                     NowPlaying(
                         groupId: group.id,
                         roomName: group.name,
@@ -70,6 +73,7 @@ final class SonosHousehold {
                         actions: group.actions
                     )
                 }
+                return group.radioSong.flatMap { nowPlaying?.withSong($0) } ?? nowPlaying
             }
             .first
     }
@@ -86,6 +90,8 @@ final class SonosHousehold {
     /// The socket subscribed to `groups:1`. Also in `sockets`.
     @ObservationIgnored private var topologyURL: URL?
     @ObservationIgnored private var connectTask: Task<Void, Never>?
+    /// Radio songs already looked up, keyed by the station's "now playing" text.
+    @ObservationIgnored private var radioSongs: [String: RadioSong?] = [:]
 
     func start() {
         discovery.onPlayersChanged = { [weak self] hosts in
@@ -102,6 +108,37 @@ final class SonosHousehold {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 now = .now
+            }
+        }
+        // Radio song titles only come from the older UPnP interface, which has to be asked.
+        Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                await refreshRadioSongs()
+            }
+        }
+    }
+
+    /// Asks each playing station's coordinator for its "now playing" text, and looks up
+    /// the song when the text changes. Each distinct text is only looked up once.
+    private func refreshRadioSongs() async {
+        let stations = groups.values.filter { $0.isPlaying && $0.metadata?.container?.type == "station" }
+        for group in stations {
+            guard let host = group.coordinatorURL.host() else { continue }
+            let text = await RadioSong.streamText(fromPlayer: host, session: session)
+            guard let current = groups[group.id], current.radioText != text else { continue }
+            groups[group.id]?.radioText = text
+
+            let song: RadioSong?
+            if let text, let cached = radioSongs[text] {
+                song = cached
+            } else {
+                song = await RadioSong.resolve(text, station: current.metadata?.container?.name, session: session)
+                if let text { radioSongs[text] = song }
+            }
+            // The station may have changed while the lookup ran.
+            if groups[group.id]?.radioText == text {
+                groups[group.id]?.radioSong = song
             }
         }
     }
@@ -194,7 +231,17 @@ final class SonosHousehold {
             }
         case "metadataStatus":
             if let groupId, let message = try? decoder.decode(SonosEnvelope<SonosMetadataStatus>.self, from: data) {
+                let previous = groups[groupId]?.metadata?.container
                 groups[groupId]?.metadata = message.body
+                let container = message.body.container
+                if previous?.name != container?.name || previous?.type != container?.type {
+                    // A different source: forget the old station's song, and check the new one now.
+                    groups[groupId]?.radioText = nil
+                    groups[groupId]?.radioSong = nil
+                    if container?.type == "station" {
+                        Task { await refreshRadioSongs() }
+                    }
+                }
             }
         case "globalError":
             if let message = try? decoder.decode(SonosEnvelope<SonosGlobalError>.self, from: data) {
